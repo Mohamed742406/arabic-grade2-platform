@@ -1,0 +1,6 @@
+{
+  "name": "بطلة اللغة العربية - الصف الثاني الابتدائي",
+  "description": "منصة تعليمية تفاعلية مبهجة لمادة اللغة العربية الصف الثاني الابتدائي الفصل الدراسي الأول",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

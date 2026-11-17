@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif;
+    --font-reading: 'Noto Sans Arabic', 'Cairo', system-ui, sans-serif;
+  }
+
+  html {
+    direction: rtl;
+    font-family: var(--font-display);
+    background-color: #FFFBF2;
+    color: #1E293B;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #FFFBF2;
+    background-image:
+      radial-gradient(circle at 12% 10%, rgba(254, 215, 170, 0.28) 0%, transparent 32%),
+      radial-gradient(circle at 88% 18%, rgba(186, 230, 253, 0.35) 0%, transparent 35%),
+      radial-gradient(circle at 50% 90%, rgba(254, 240, 138, 0.22) 0%, transparent 40%);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.font-reading {
+  font-family: var(--font-reading);
+  line-height: 2.25;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 3.4s ease-in-out infinite;
+}
+
+.animate-pop-in {
+  animation: popIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow,
+  .animate-pop-in {
+    animation: none !important;
+  }
+}
