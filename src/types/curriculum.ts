@@ -17,6 +17,8 @@ export interface LessonLine {
   isPoetry?: boolean;
   poetryHemistichs?: [string, string];
   highlightWords: string[];
+  startTime?: number;
+  endTime?: number;
 }
 
 export interface SyllableWord {
@@ -112,6 +114,7 @@ export interface LessonData {
   typeLabel: 'استماع' | 'قراءة' | 'نشيد';
   shortSummary: string;
   robotGreeting: string;
+  audioUrl?: string;
   lines: LessonLine[];
   vocabulary: VocabItem[];
   egyptianStory: string[];

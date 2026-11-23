@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Volume2, Square, Sparkles, BookOpen, Gauge } from 'lucide-react';
+import { Volume2, Square, Sparkles, BookOpen, Gauge, Play, Pause, RotateCcw } from 'lucide-react';
 import { LessonData, VocabItem } from '../../types/curriculum';
 import { RobotCompanion } from '../RobotCompanion';
 import { speakArabicLines, speakSinglePhrase, SpeechController } from '../../utils/soundAndSpeech';
@@ -9,21 +9,89 @@ interface ReadListenTabProps {
   studentName: string;
 }
 
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 export const ReadListenTab: React.FC<ReadListenTabProps> = ({ lesson, studentName }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeLineIdx, setActiveLineIdx] = useState<number | null>(null);
   const [slowMode, setSlowMode] = useState(false);
   const [selectedVocab, setSelectedVocab] = useState<VocabItem | null>(null);
   const [hasArabicVoice, setHasArabicVoice] = useState<boolean | null>(null);
+
+  // Real MP3 audio player state
+  const [audioFailed, setAudioFailed] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   const controllerRef = useRef<SpeechController | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const usesRecordedAudio = Boolean(lesson.audioUrl) && !audioFailed;
 
   useEffect(() => {
+    setIsPlaying(false);
+    setActiveLineIdx(null);
+    setCurrentTime(0);
+    setDuration(0);
+    setAudioFailed(false);
+
     return () => {
       controllerRef.current?.stop();
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
     };
   }, [lesson.id]);
 
+  // Keep playbackRate synced when slowMode toggles
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = slowMode ? 0.85 : 1.0;
+    }
+  }, [slowMode]);
+
+  const handleAudioTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const t = audio.currentTime;
+    setCurrentTime(t);
+
+    const matchedIdx = lesson.lines.findIndex(
+      (line) =>
+        line.startTime !== undefined &&
+        line.endTime !== undefined &&
+        t >= line.startTime &&
+        t < line.endTime
+    );
+    setActiveLineIdx(matchedIdx >= 0 ? matchedIdx : null);
+  };
+
   const handleTogglePlay = () => {
+    if (usesRecordedAudio && audioRef.current) {
+      const audio = audioRef.current;
+      if (isPlaying) {
+        audio.pause();
+        setIsPlaying(false);
+      } else {
+        audio.playbackRate = slowMode ? 0.85 : 1.0;
+        audio
+          .play()
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            setAudioFailed(true);
+          });
+      }
+      return;
+    }
+
+    // Fallback / Default Web Speech API reader
     if (isPlaying) {
       controllerRef.current?.stop();
       setIsPlaying(false);
@@ -44,7 +112,40 @@ export const ReadListenTab: React.FC<ReadListenTabProps> = ({ lesson, studentNam
     });
   };
 
+  const handleRestartAudio = () => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = 0;
+    setCurrentTime(0);
+    setActiveLineIdx(null);
+    audioRef.current.playbackRate = slowMode ? 0.85 : 1.0;
+    audioRef.current
+      .play()
+      .then(() => setIsPlaying(true))
+      .catch(() => {});
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!audioRef.current) return;
+    const nextTime = Number(e.target.value);
+    audioRef.current.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
   const handleSpeakLine = (text: string, idx: number) => {
+    const line = lesson.lines[idx];
+    if (usesRecordedAudio && audioRef.current && line?.startTime !== undefined) {
+      const audio = audioRef.current;
+      audio.currentTime = line.startTime;
+      setCurrentTime(line.startTime);
+      setActiveLineIdx(idx);
+      audio.playbackRate = slowMode ? 0.85 : 1.0;
+      audio
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+      return;
+    }
+
     controllerRef.current?.stop();
     setIsPlaying(false);
     setActiveLineIdx(idx);
@@ -57,7 +158,6 @@ export const ReadListenTab: React.FC<ReadListenTabProps> = ({ lesson, studentNam
   const renderHighlightedText = (text: string, highlightWords: string[]) => {
     if (!highlightWords.length) return <span>{text}</span>;
 
-    // Build regex for exact highlighted words
     const escaped = highlightWords.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const regex = new RegExp(`(${escaped.join('|')})`, 'g');
     const parts = text.split(regex);
@@ -92,62 +192,130 @@ export const ReadListenTab: React.FC<ReadListenTabProps> = ({ lesson, studentNam
 
   return (
     <div className="space-y-6">
+      {lesson.audioUrl && !audioFailed && (
+        <audio
+          ref={audioRef}
+          src={lesson.audioUrl}
+          preload="metadata"
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          onTimeUpdate={handleAudioTimeUpdate}
+          onEnded={() => {
+            setIsPlaying(false);
+            setActiveLineIdx(null);
+          }}
+          onError={() => setAudioFailed(true)}
+        />
+      )}
+
       <RobotCompanion
         mood={isPlaying ? 'speaking' : 'happy'}
         message={
           isPlaying
-            ? `اسمعيني كويس يا ${studentName} وأنا بقرأ لك الدرس سطر بسطر! تقدري كمان تضغطي على أي كلمة ملونة عشان تعرفي معناها.`
+            ? `اسمعي القصة كويس يا ${studentName} وتابعي السطر المتظلل! تقدري كمان تضغطي على أي سطر أو كلمة ملونة.`
+            : usesRecordedAudio
+            ? `${lesson.robotGreeting} اضغطي على زر «اسمع القصة» عشان تسمعي التسجيل الصوتي الجميل وتتابعي سطر بسطر!`
             : `${lesson.robotGreeting} اضغطي على زر «اسمع بصوت الروبوت» أو اضغطي على أي سطر أو كلمة ملونة!`
         }
       />
 
       {/* Audio Control Bar */}
-      <div className="bg-white border border-sky-200 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 shadow-xs">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleTogglePlay}
-            className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-extrabold text-base transition-all cursor-pointer shadow-sm ${
-              isPlaying
-                ? 'bg-rose-500 hover:bg-rose-600 text-white'
-                : 'bg-sky-600 hover:bg-sky-700 text-white'
-            }`}
-          >
-            {isPlaying ? (
-              <>
-                <Square className="w-5 h-5 fill-current" />
-                <span>إيقاف القراءة</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-5 h-5" />
-                <span>اسمع بصوت الروبوت</span>
-              </>
+      <div className="bg-white border border-sky-200 rounded-3xl p-4 sm:p-5 space-y-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleTogglePlay}
+              className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-extrabold text-base transition-all cursor-pointer shadow-sm ${
+                isPlaying
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                  : 'bg-sky-600 hover:bg-sky-700 text-white'
+              }`}
+            >
+              {usesRecordedAudio ? (
+                isPlaying ? (
+                  <>
+                    <Pause className="w-5 h-5 fill-current" />
+                    <span>إيقاف مؤقت</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5 fill-current" />
+                    <span>{currentTime > 0 ? 'استكمال الاستماع' : 'اسمع القصة'}</span>
+                  </>
+                )
+              ) : isPlaying ? (
+                <>
+                  <Square className="w-5 h-5 fill-current" />
+                  <span>إيقاف القراءة</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-5 h-5" />
+                  <span>اسمع بصوت الروبوت</span>
+                </>
+              )}
+            </button>
+
+            {usesRecordedAudio && currentTime > 0 && (
+              <button
+                type="button"
+                onClick={handleRestartAudio}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-sm font-bold transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>من البداية</span>
+              </button>
             )}
-          </button>
 
-          <button
-            type="button"
-            onClick={() => setSlowMode((prev) => !prev)}
-            disabled={isPlaying}
-            className={`flex items-center gap-2 px-4 py-3 rounded-2xl border text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 ${
-              slowMode
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Gauge className="w-4 h-4" />
-            <span>{slowMode ? 'قراءة هادئة (مفعلة)' : 'سرعة القراءة: عادية'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setSlowMode((prev) => !prev)}
+              disabled={!usesRecordedAudio && isPlaying}
+              className={`flex items-center gap-2 px-4 py-3 rounded-2xl border text-sm font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                slowMode
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Gauge className="w-4 h-4" />
+              <span>{slowMode ? 'قراءة هادئة (مفعلة)' : 'سرعة القراءة: عادية'}</span>
+            </button>
+          </div>
+
+          <div className="text-sm text-slate-500 font-semibold flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-amber-600" />
+            <span>
+              {usesRecordedAudio
+                ? 'اضغطي على أي سطر لتشغيله أو على الكلمات الملونة لمعرفة معناها'
+                : 'اضغطي على الكلمات الملونة لمعرفة معناها'}
+            </span>
+          </div>
         </div>
 
-        <div className="text-sm text-slate-500 font-semibold flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-amber-600" />
-          <span>اضغطي على الكلمات الملونة لمعرفة معناها</span>
-        </div>
+        {/* Scrubber Bar for Real MP3 Audio */}
+        {usesRecordedAudio && duration > 0 && (
+          <div className="flex items-center gap-3 pt-2 border-t border-slate-100" dir="ltr">
+            <span className="text-xs font-extrabold text-slate-600 tabular-nums w-10 text-center">
+              {formatTime(currentTime)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={duration}
+              step={0.1}
+              value={currentTime}
+              onChange={handleSeek}
+              aria-label="شريط التقدم الصوتي"
+              className="flex-1 accent-sky-600 cursor-pointer h-2 rounded-lg"
+            />
+            <span className="text-xs font-extrabold text-slate-500 tabular-nums w-10 text-center">
+              {formatTime(duration)}
+            </span>
+          </div>
+        )}
       </div>
 
-      {hasArabicVoice === false && isPlaying && (
+      {!usesRecordedAudio && hasArabicVoice === false && isPlaying && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-900 font-semibold">
           ملاحظة لطيفة: جهازك لا يحتوي على صوت عربي مثبت في المتصفح حالياً، لكنني أظلل لكِ السطور سطراً بسطر لتقرئي معي بسهولة!
         </div>
